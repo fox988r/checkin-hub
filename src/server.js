@@ -5,6 +5,7 @@ import { encrypt, readStore, writeStore } from './store.js';
 import { estimateAccountCalls, refreshModelCatalog, refreshModelPrice, runAccount, runAll, safeUrl, testModelConnection } from './runner.js';
 import { installGateway } from './gateway.js';
 import { createSession, validSession } from './session.js';
+import { installImportRoutes } from './browserImport.js';
 import { gatewayStatistics } from './stats.js';
 import { browserAvailable, openBrowserLogin } from './browser.js';
 
@@ -18,6 +19,7 @@ installGateway(app);
 
 function cookies(req) { return Object.fromEntries((req.headers.cookie || '').split(';').filter(Boolean).map(x => x.trim().split('='))); }
 function auth(req, res, next) { if (!validSession(cookies(req).session, sessionSecret)) return res.status(401).json({ error: '请先登录' }); next(); }
+installImportRoutes(app, auth);
 app.get('/health', (_req, res) => res.json({ ok: true }));
 app.get('/browser', auth, (_req, res) => res.redirect('/browser/vnc.html?path=browser/websockify&autoconnect=true&resize=scale'));
 app.use('/browser', auth, express.static(process.env.BROWSER_WEB_ROOT || '/usr/share/novnc'));

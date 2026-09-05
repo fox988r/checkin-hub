@@ -29,6 +29,7 @@ async function load() {
     $('#app').classList.remove('hidden');
     $('#logout').classList.remove('hidden');
     render(data);
+    loadImportInfo();
   } catch {
     accounts = [];
     $('#login').classList.remove('hidden');
@@ -53,6 +54,8 @@ function render(data) {
       <div class="site-tags">${(a.tags || []).map(tag => `<span>${esc(tag)}</span>`).join('') || '<span class="empty-tag">未设置标签</span>'}</div>
       <a class="site-link" href="${esc(a.baseUrl)}" target="_blank" rel="noopener noreferrer">打开站点 ↗</a>
       ${a.refreshMode === 'browser' ? '<span class="browser-badge">服务器浏览器续期</span>' : ''}
+      ${a.source === 'browser-import' ? '<span class="browser-badge">浏览器导入</span>' : ''}
+      ${a.checkinSupported === true ? '<span class="checkin-badge">签到接口 ✅</span>' : a.checkinSupported === null && a.source === 'browser-import' ? '<span class="checkin-badge unknown">签到接口待验证</span>' : ''}
       <div class="balance">${esc(a.balance ?? '—')}</div>
       <div class="model-box"><strong>${esc(a.modelName || '尚未选择模型')}</strong><span>${esc(priceWithEstimate(a.modelPrice) || (a.hasApiKey ? '点击选择模型并查看价格' : '请先编辑并填写 API Key'))}</span></div>
       <p class="meta">${a.lastError ? esc(a.lastError) : a.lastCheckinMessage ? esc(a.lastCheckinMessage) : a.lastCheckedAt ? '更新于 ' + new Date(a.lastCheckedAt).toLocaleString() : '等待首次刷新'}</p>
@@ -154,6 +157,38 @@ $('#loginForm').onsubmit = async event => {
   } catch (error) { $('#loginError').textContent = error.message; }
   finally { button.disabled = false; button.textContent = '进入控制台'; }
 };
+
+async function loadImportInfo() {
+  try {
+    const [tokenData, recordData] = await Promise.all([api('/api/import/token'), api('/api/import/records')]);
+    $('#importTokenStatus').textContent = tokenData.active
+      ? `Token 已生成 · ${new Date(tokenData.createdAt).toLocaleString()}${tokenData.lastUsedAt ? ` · 最近使用 ${new Date(tokenData.lastUsedAt).toLocaleString()}` : ' · 尚未使用'}`
+      : '尚未生成导入 Token';
+    $('#revokeImportToken').classList.toggle('hidden', !tokenData.active);
+    $('#genImportToken').textContent = tokenData.active ? '重新生成' : '生成导入 Token';
+    $('#importRecords').innerHTML = (recordData.records || []).map(record => {
+      const label = record.result === 'created' ? '新增' : record.result === 'updated' ? '更新' : '失败';
+      return `<span class="import-record ${record.result === 'failed' ? 'failed' : ''}">${esc(record.name)} · ${esc(record.origin)} · ${label}${record.message ? ` · ${esc(record.message)}` : ''} · ${new Date(record.at).toLocaleString()}</span>`;
+    }).join('') || '<span class="hint">还没有浏览器导入记录。</span>';
+  } catch { $('#importTokenStatus').textContent = '加载失败'; }
+}
+window.generateImportToken = async () => {
+  if (!confirm('生成新 Token 会立即吊销旧 Token，正在使用的扩展需要更新，继续？')) return;
+  try {
+    const data = await api('/api/import/token', { method: 'POST' });
+    const box = $('#importTokenValue');
+    box.classList.remove('hidden');
+    box.textContent = `新 Token（只显示这一次，请立即复制到扩展）：${data.token}`;
+    loadImportInfo();
+  } catch (error) { alert(error.message); }
+};
+window.revokeImportToken = async () => {
+  if (!confirm('确定吊销导入 Token？吊销后扩展将无法导入站点。')) return;
+  try { await api('/api/import/token', { method: 'DELETE' }); $('#importTokenValue').classList.add('hidden'); loadImportInfo(); }
+  catch (error) { alert(error.message); }
+};
+$('#genImportToken').onclick = () => generateImportToken();
+$('#revokeImportToken').onclick = () => revokeImportToken();
 
 $('#logout').onclick = async () => { await api('/api/logout', { method: 'POST' }); location.reload(); };
 $('#addTagForm').onsubmit = async event => {

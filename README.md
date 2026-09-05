@@ -26,6 +26,18 @@ npm start
 
 默认提供 New API / One API 多站点模板。每个站点只需填写名称、根地址、登录 Cookie 和数字用户 ID，程序会自动发送 `Cookie` 与 `New-Api-User` 请求头，读取 `/api/user/self` 的额度，并调用 `/api/user/checkin` 签到。可以重复添加任意数量的站点。
 
+### 浏览器扩展一键导入
+
+不想手工复制 Cookie 和用户 ID，可以用自带的浏览器扩展（`browser-extension/` 目录，支持 Chrome / Edge / Firefox，Manifest V3）：
+
+1. 在后台「浏览器导入」面板点击「生成导入 Token」（只显示一次，可随时重新生成或吊销；旧 Token 会立即失效）。
+2. 在浏览器里加载扩展（详见 `browser-extension/README.md`），填入积分台地址与导入 Token。
+3. 保持站点标签页打开，点「扫描当前站点」或「扫描所有已打开标签页」。扩展会在页面内同源探测 `/api/status`、`/api/user/self` 与签到接口，识别面板类型、登录态、用户 ID 和余额，不会读取浏览历史或未打开的站点。
+4. 勾选后点「加入积分台」。扩展只在此时读取目标站点 Cookie（含 httpOnly 的 `session`），并只发送给你自己的积分台。
+5. 服务器会立即用导入的凭据验证 `/api/user/self`：验证通过才保存账号，卡片带「浏览器导入」标记；验证失败则不保存，避免存入坏账号。扫描探测绝不 POST 签到接口，不会误触发签到。
+
+导入 Token 只允许调用 `/api/import/*` 接口：不能登录后台、不能读取已保存凭据或 API Key、不能访问统一网关。服务端只保存 Token 的 SHA-256 哈希，同一 `baseUrl` 重复导入会更新登录态而不是重复建号。
+
 特殊站点可选择“自定义 JSON API”：填写余额接口与 JSON 字段路径、签到接口，以及 Bearer Token、Cookie 或自定义请求头凭据。例如余额响应为 `{ "data": { "points": 120 } }`，余额字段填 `data.points`。短期 Bearer 还可填写刷新接口和 `new_api_refresh` Cookie；请求遇到 401 时会自动刷新、保存轮换凭据并重试一次。
 若站点余额使用 Bearer、模型价格接口却使用浏览器登录 Cookie，可单独填写“价格 Cookie”；它只用于价格接口，不会覆盖余额与签到凭据。
 

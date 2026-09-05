@@ -163,3 +163,41 @@ test('public invite preview exposes only chosen names and links', () => {
   assert.match(invites, /item\.url/);
   assert.doesNotMatch(invites, /balance|apiKey|credential|modelName/);
 });
+
+test('browser import panel manages the token lifecycle in the dashboard', () => {
+  const html = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+  const source = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  assert.match(html, /浏览器导入/);
+  assert.match(html, /id="genImportToken"/);
+  assert.match(html, /id="revokeImportToken"/);
+  assert.match(html, /id="importRecords"/);
+  assert.match(source, /\/api\/import\/token/);
+  assert.match(source, /立即吊销旧 Token/);
+  assert.match(source, /只显示这一次/);
+  assert.match(source, /吊销导入 Token/);
+});
+
+test('site cards and records mark browser-imported accounts', () => {
+  const source = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  assert.match(source, /source === 'browser-import'/);
+  assert.match(source, /浏览器导入<\/span>/);
+  assert.match(source, /checkinSupported/);
+});
+
+test('import routes use a dedicated token instead of the admin session', () => {
+  const source = fs.readFileSync(new URL('../src/server.js', import.meta.url), 'utf8');
+  const importer = fs.readFileSync(new URL('../src/browserImport.js', import.meta.url), 'utf8');
+  assert.match(source, /installImportRoutes\(app, auth\)/);
+  assert.match(importer, /app\.post\('\/api\/import\/account', importAuth/);
+  assert.match(importer, /导入 Token 无效或已吊销/);
+  assert.match(importer, /timingSafeEqual/);
+  assert.match(importer, /sha256/);
+  assert.doesNotMatch(importer, /ADMIN_PASSWORD/);
+});
+
+test('import never triggers check-in and reuses the existing verification helpers', () => {
+  const importer = fs.readFileSync(new URL('../src/browserImport.js', import.meta.url), 'utf8');
+  assert.match(importer, /method: 'GET'/);
+  assert.doesNotMatch(importer, /method: 'POST'[\s\S]*checkin/);
+  assert.match(importer, /from '\.\/runner\.js'/);
+});

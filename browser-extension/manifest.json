@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "站点积分台 · 收编助手",
+  "version": "1.0.0",
+  "description": "把浏览器里已登录的 New API / One API 站点一键扫描并导入自建积分台。只在你主动点击时扫描当前打开的标签页，不读取浏览历史。",
+  "permissions": ["tabs", "cookies", "scripting", "storage"],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "action": {
+    "default_title": "站点积分台收编助手",
+    "default_popup": "popup.html"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "site-points-hub-extension@selfhosted",
+      "strict_min_version": "115.0"
+    }
+  }
+}

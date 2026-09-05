@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <h1>站点积分台 · 收编助手</h1>
+  <details id="settingsBox">
+    <summary>积分台连接设置</summary>
+    <label>积分台地址<input id="hubUrl" type="url" placeholder="https://your-hub.zeabur.app"></label>
+    <label>导入 Token<input id="importToken" type="password" placeholder="在积分台后台「浏览器导入」生成"></label>
+    <button id="saveSettings">保存设置</button>
+    <p id="settingsHint" class="hint"></p>
+  </details>
+  <div id="actions">
+    <button id="scanCurrent">扫描当前站点</button>
+    <button id="scanAll" class="secondary">扫描所有已打开标签页</button>
+  </div>
+  <div id="scanStatus" class="hint"></div>
+  <div id="results"></div>
+  <footer>
+    <button id="importBtn" disabled>加入积分台</button>
+    <div id="importStatus" class="hint"></div>
+  </footer>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

@@ -87,7 +87,7 @@ export function isHtmlResponse(text, contentType = '') {
   return /text\/html/i.test(contentType) || /^\s*(?:<!doctype\s+html|<html\b)/i.test(String(text));
 }
 
-async function call(account, endpoint, method, panelType = 'generic', retried = false) {
+export async function call(account, endpoint, method, panelType = 'generic', retried = false) {
   const url = await safeUrl(account.baseUrl, endpoint);
   const headers = {
     accept: 'application/json, text/plain, */*',
