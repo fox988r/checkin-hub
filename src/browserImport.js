@@ -1,6 +1,10 @@
 import crypto from 'node:crypto';
 import { decrypt, encrypt, mutateStore, readStore } from './store.js';
 import { call, formatQuota, readRemainingQuota, safeUrl } from './runner.js';
+import { getRegistry } from '../adapters/registry.js';
+import { createAdapterContext } from '../adapters/context.js';
+
+const AUTO_CHECKIN_TAG = '自动签到';
 
 const TOKEN_PREFIX = 'sphimp_';
 const MAX_IMPORT_RECORDS = 30;
@@ -91,9 +95,12 @@ function sanitizedTags(value) {
 
 export function buildImportPayload(body = {}) {
   const baseUrl = String(body.baseUrl || '').trim().replace(/\/+$/, '');
+  const requestedAdapter = String(body.adapterId || '').trim();
+  const knownAdapter = requestedAdapter && getRegistry().get(requestedAdapter) ? requestedAdapter : '';
   return {
     baseUrl,
     panelType: body.panelType === 'generic' ? 'generic' : 'newapi',
+    adapterId: knownAdapter,
     userId: String(body.userId || '').replace(/\D/g, '').slice(0, 20),
     credential: String(body.credential || '').replace(/^Cookie:\s*/i, '').trim().slice(0, 8192),
     name: String(body.name || '').trim().slice(0, 60),
@@ -161,7 +168,15 @@ export function installImportRoutes(app, adminAuth) {
     };
     let verification;
     try {
-      verification = await verifyImportedAccount(probe);
+      if (payload.adapterId) {
+        // 声明式/自定义 adapter：用适配器自身的余额实现做导入验证。
+        const adapter = getRegistry().get(payload.adapterId);
+        probe.authType = adapter.auth === 'configurable' ? 'cookie' : adapter.auth;
+        const result = await adapter.run(createAdapterContext(probe, { dryRun: true }), probe, 'poll');
+        verification = { balance: result.balance, rawBalance: result.rawBalance, checkinSupported: await probeCheckinEndpoint(probe) };
+      } else {
+        verification = await verifyImportedAccount(probe);
+      }
     } catch (error) {
       recordImport(payload.name || payload.baseUrl, payload.baseUrl, 'failed', error.message);
       return res.status(400).json({ error: `登录验证失败，未保存：${error.message}` });
@@ -178,12 +193,13 @@ export function installImportRoutes(app, adminAuth) {
               name: payload.name || old?.name || payload.baseUrl.replace(/^https?:\/\//, ''),
               userId: payload.userId || old?.userId || '',
               credential: encrypt(payload.credential),
+              adapterId: payload.adapterId || (payload.panelType === 'generic' ? 'generic-json' : 'new-api'),
               tags: [...new Set([...(old?.tags || []), ...payload.tags])].slice(0, 10),
               source: 'browser-import',
               checkinSupported: verification.checkinSupported,
               balance: verification.balance,
               balanceRaw: verification.rawBalance,
-              lastStatus: 'ok', lastError: '', lastCheckedAt: now
+              lastStatus: 'ok', lastError: '', lastErrorKind: '', lastCheckedAt: now
             };
             let account;
             if (old) {
@@ -201,9 +217,19 @@ export function installImportRoutes(app, adminAuth) {
               };
               db.accounts.push(account);
             }
+            // 适配器明确确认支持签到时，自动加入「自动签到」队列（可全局关闭）。
+            let autoTagged = false;
+            const importSettings = db.settings || (db.settings = {});
+            if (importSettings.autoCheckinOnImport !== false && verification.checkinSupported === true) {
+              if (!db.tags.includes(AUTO_CHECKIN_TAG)) db.tags.push(AUTO_CHECKIN_TAG);
+              if (!Array.isArray(db.pollTags)) db.pollTags = [];
+              if (!db.pollTags.includes(AUTO_CHECKIN_TAG)) db.pollTags.push(AUTO_CHECKIN_TAG);
+              account.tags = [...new Set([...(account.tags || []), AUTO_CHECKIN_TAG])].slice(0, 10);
+              autoTagged = true;
+            }
             db.runs.unshift({ id: crypto.randomUUID(), accountId: account.id, action: 'poll', status: 'ok', message: old ? '浏览器导入：更新登录态并验证成功' : '浏览器导入：验证成功', startedAt: now });
             db.runs = db.runs.slice(0, 5000);
-            return { result: old ? 'updated' : 'created', account };
+            return { result: old ? 'updated' : 'created', account, autoTagged };
           }));
         } catch (error) {
           resolve({ error: error.message });
@@ -218,8 +244,20 @@ export function installImportRoutes(app, adminAuth) {
       ok: true,
       result: outcome.result,
       existed: outcome.result !== 'created',
+      autoTagged: Boolean(outcome.autoTagged),
       verification: { balance: verification.balance, checkinSupported: verification.checkinSupported },
-      account: { id: outcome.account.id, name: outcome.account.name }
+      account: { id: outcome.account.id, name: outcome.account.name, adapterId: outcome.account.adapterId }
     });
+  });
+
+  app.get('/api/import/settings', adminAuth, (_req, res) => {
+    res.json({ autoCheckinOnImport: readStore().settings?.autoCheckinOnImport !== false });
+  });
+  app.post('/api/import/settings', adminAuth, (req, res) => {
+    mutateStore(db => {
+      db.settings = db.settings || {};
+      db.settings.autoCheckinOnImport = req.body.enabled !== false;
+    });
+    res.json({ ok: true, autoCheckinOnImport: readStore().settings?.autoCheckinOnImport !== false });
   });
 }

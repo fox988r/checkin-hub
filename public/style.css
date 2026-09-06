@@ -25,3 +25,5 @@ dialog{width:min(640px,calc(100% - 24px));max-height:calc(100vh - 32px);overflow
 .browser-badge{display:inline-flex;width:fit-content;margin:8px 0 0 8px;padding:4px 9px;border-radius:999px;background:#f1e4ff;color:#8052a3;font-size:11px;font-weight:700}
 .checkin-badge{display:inline-flex;width:fit-content;margin:8px 0 0 6px;padding:4px 9px;border-radius:999px;background:#e8f7ef;color:var(--green);font-size:11px;font-weight:700}.checkin-badge.unknown{background:#fff3d6;color:#a07a1f}
 .import-panel{margin-top:10px}.import-record{padding:4px 10px;border-radius:999px;background:var(--soft);color:var(--deep);font-size:11px;font-weight:650}.import-record.failed{background:#ffe6ec;color:var(--red)}.import-token-value{grid-column:1/-1;padding:10px 13px;border:1px dashed var(--pink);border-radius:13px;background:rgba(255,240,247,.8);color:var(--deep);font-size:12px;font-weight:700;word-break:break-all}
+.import-setting{display:inline-flex;align-items:center;gap:6px;margin:0;color:var(--muted);font-size:12px;font-weight:650}.import-setting input{width:15px;height:15px;padding:0;accent-color:var(--deep)}
+.card .meta b{color:var(--red)}

@@ -1,0 +1,24 @@
+{
+  "_comment": "声明式适配器示例。把本文件改名为 example-site.json 放入 adapters/declarative/ 即会被自动加载；保留 .json.example 后缀则不会被加载。",
+  "id": "example-site",
+  "name": "示例站",
+  "match": {
+    "statusPath": "/api/status",
+    "jsonContains": ["site_name"]
+  },
+  "auth": "cookie",
+  "balance": {
+    "path": "/api/user",
+    "field": "data.points",
+    "divisor": 1
+  },
+  "checkinStatus": {
+    "path": "/api/checkin/status",
+    "field": "data.checked"
+  },
+  "checkin": {
+    "path": "/api/checkin",
+    "method": "POST",
+    "currency": "raw"
+  }
+}

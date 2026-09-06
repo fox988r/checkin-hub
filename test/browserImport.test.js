@@ -196,3 +196,54 @@ test('manual accounts created through the admin API keep working alongside impor
   assert.equal(response.status, 200);
   assert.equal(response.body.name, '糖糕站改名');
 });
+
+test('confirmed checkin support auto-joins the check-in queue with the tag', async () => {
+  upstream.set('/api/user/checkin', { status: 200, body: { success: true, message: '签到成功' } });
+  const response = await callApi('/api/import/account', {
+    method: 'POST',
+    headers: authHeaders,
+    body: JSON.stringify({ ...goodPayload, baseUrl: 'https://example.org', name: '可签到站' })
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.body.autoTagged, true);
+  assert.equal(response.body.account.adapterId, 'new-api');
+  const db = readStore();
+  assert.ok(db.tags.includes('自动签到'), '标签应被自动创建');
+  assert.ok(db.pollTags.includes('自动签到'), '标签应默认参与轮询');
+  assert.ok(db.accounts.find(x => x.baseUrl === 'https://example.org').tags.includes('自动签到'));
+});
+
+test('unconfirmed checkin support never auto-joins the check-in queue', async () => {
+  upstream.set('/api/user/checkin', { status: 404, body: { message: 'Not Found' } });
+  const response = await callApi('/api/import/account', {
+    method: 'POST',
+    headers: authHeaders,
+    body: JSON.stringify({ ...goodPayload, baseUrl: 'https://www.example.com', name: '待确认站' })
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.body.autoTagged, false);
+  const account = readStore().accounts.find(x => x.baseUrl === 'https://www.example.com');
+  assert.equal(account.tags.includes('自动签到'), false);
+  assert.equal(account.checkinSupported, null);
+});
+
+test('the auto check-in queue toggle can be turned off and respected', async () => {
+  const off = await realFetch(`${base}/api/import/settings`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled: false }) });
+  assert.equal(off.status, 200);
+  upstream.set('/api/user/checkin', { status: 200, body: { success: true, message: '签到成功' } });
+  const response = await callApi('/api/import/account', {
+    method: 'POST',
+    headers: authHeaders,
+    body: JSON.stringify({ ...goodPayload, baseUrl: 'https://www.example.org', name: '关掉自动签到的站' })
+  });
+  assert.equal(response.body.autoTagged, false);
+  assert.equal(readStore().accounts.find(x => x.baseUrl === 'https://www.example.org').tags.includes('自动签到'), false);
+  const settings = await realFetch(`${base}/api/import/settings`);
+  assert.equal((await settings.json()).autoCheckinOnImport, false);
+});
+
+test('imports record the resolved adapter on the account', () => {
+  const legacy = readStore().accounts.find(x => x.baseUrl === 'https://example.com');
+  assert.equal(legacy.adapterId, 'new-api');
+  assert.equal(legacy.source, 'browser-import');
+});

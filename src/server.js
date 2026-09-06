@@ -6,6 +6,10 @@ import { estimateAccountCalls, refreshModelCatalog, refreshModelPrice, runAccoun
 import { installGateway } from './gateway.js';
 import { createSession, validSession } from './session.js';
 import { installImportRoutes } from './browserImport.js';
+import { matchAdapters } from '../adapters/registry.js';
+import { createAdapterContext } from '../adapters/context.js';
+import { discoverSite } from '../adapters/discovery.js';
+import { NOTIFIER_ACTIVE } from '../notifiers/webhook.js';
 import { gatewayStatistics } from './stats.js';
 import { browserAvailable, openBrowserLogin } from './browser.js';
 
@@ -20,6 +24,25 @@ installGateway(app);
 function cookies(req) { return Object.fromEntries((req.headers.cookie || '').split(';').filter(Boolean).map(x => x.trim().split('='))); }
 function auth(req, res, next) { if (!validSession(cookies(req).session, sessionSecret)) return res.status(401).json({ error: '请先登录' }); next(); }
 installImportRoutes(app, auth);
+app.get('/api/notifiers', auth, (_req, res) => res.json({ active: NOTIFIER_ACTIVE ? ['webhook'] : [] }));
+// 通用站点发现：只读 GET 探测 + adapter 评分，dry-run 上下文双保险拦截写请求。
+app.post('/api/discover', auth, async (req, res) => {
+  try {
+    const baseUrl = String(req.body.baseUrl || '').trim().replace(/\/+$/, '');
+    if (!baseUrl) return res.status(400).json({ error: '缺少站点地址' });
+    await safeUrl(baseUrl, '/');
+    const probe = {
+      baseUrl,
+      credential: encrypt(String(req.body.credential || '')),
+      authType: ['bearer', 'cookie', 'header', 'none'].includes(req.body.authType) ? req.body.authType : 'cookie',
+      headerName: String(req.body.headerName || '').slice(0, 50),
+      userId: String(req.body.userId || '').replace(/\D/g, '').slice(0, 20)
+    };
+    const context = createAdapterContext(probe, { dryRun: true });
+    const [match, discovery] = await Promise.all([matchAdapters(context), discoverSite(context)]);
+    res.json({ match: { adapterId: match.adapterId, confidence: match.confidence, reasons: match.reasons || [] }, discovery });
+  } catch (error) { res.status(400).json({ error: error.message }); }
+});
 app.get('/health', (_req, res) => res.json({ ok: true }));
 app.get('/browser', auth, (_req, res) => res.redirect('/browser/vnc.html?path=browser/websockify&autoconnect=true&resize=scale'));
 app.use('/browser', auth, express.static(process.env.BROWSER_WEB_ROOT || '/usr/share/novnc'));

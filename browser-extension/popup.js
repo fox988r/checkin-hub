@@ -79,6 +79,33 @@ function probeInPage(hubOrigin) {
       return { status: 0, error: String((error && error.message) || error) };
     }
   };
+  const discoverInPage = async getJSON => {
+    const paths = ['/api/user', '/api/user/self', '/api/me', '/api/profile', '/api/account', '/api/points', '/api/balance', '/api/user/points', '/api/user/balance', '/api/checkin/status', '/api/signin/status', '/api/checkin', '/api/user/checkin'];
+    const userHints = ['id', 'user_id', 'userid', 'uid', 'username', 'email', 'nickname'];
+    const balanceHints = ['points', 'balance', 'credit', 'quota', 'coin', 'coins', 'score', 'integral'];
+    const checkinHints = ['checkin', 'checked', 'sign_in', 'signed', 'signin'];
+    const collectKeys = value => {
+      const keys = new Set();
+      const walk = (node, depth) => {
+        if (depth > 3 || !node || typeof node !== 'object') return;
+        for (const [key, child] of Object.entries(node)) { keys.add(key.toLowerCase()); walk(child, depth + 1); }
+      };
+      walk(value, 0);
+      return keys;
+    };
+    const matches = (keys, hints) => hints.some(hint => keys.has(hint));
+    const out = { possibleUserEndpoints: [], possibleBalanceEndpoints: [], possibleCheckinEndpoints: [], notes: ['仅只读 GET 探测，未执行任何写请求'] };
+    for (const path of paths) {
+      const result = await getJSON(path);
+      if (result.status !== 200 || !result.data || typeof result.data !== 'object') continue;
+      const keys = collectKeys(result.data);
+      const entry = { path };
+      if (matches(keys, balanceHints)) out.possibleBalanceEndpoints.push(entry);
+      else if (matches(keys, checkinHints)) out.possibleCheckinEndpoints.push(entry);
+      else if (matches(keys, userHints)) out.possibleUserEndpoints.push(entry);
+    }
+    return out;
+  };
   return (async () => {
     const status = await getJSON('/api/status');
     const candidates = candidatesFromStorage(storageEntries());
@@ -93,12 +120,21 @@ function probeInPage(hubOrigin) {
       }
     }
     const checkin = await getJSON('/api/user/checkin');
+    // 未识别面板时做通用发现：只读 GET，绝不 POST/PUT/PATCH。
+    const looksPanel = status.status === 200 && status.data?.data && typeof status.data.data === 'object'
+      && ['system_name', 'version', 'start_time', 'quota_per_unit'].some(key => key in status.data.data);
+    const looksUser = self.status === 200 && self.data?.data && typeof self.data.data === 'object';
+    let discovery = null;
+    if (!looksPanel && !looksUser) {
+      discovery = await discoverInPage(getJSON);
+    }
     return {
       origin: location.origin,
       title: String(document.title || '').slice(0, 80),
       status, self, checkin,
       userId: candidates[0] || '',
-      candidates
+      candidates,
+      discovery
     };
   })();
 }
@@ -145,6 +181,7 @@ function badge(site) {
   if (site.status === 'ok') return '<span class="badge ok">✅ 已登录</span>';
   if (site.status === 'missing-user-id') return '<span class="badge warn">⚠️ 缺用户 ID</span>';
   if (site.status === 'unauthenticated') return '<span class="badge bad">❌ 未登录</span>';
+  if (site.status === 'unknown-site') return '<span class="badge warn">⚠️ Unknown Site</span>';
   if (site.status === 'error') return '<span class="badge bad">⚠️ 探测失败</span>';
   return '<span class="badge mute">— 非支持站点</span>';
 }

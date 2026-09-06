@@ -86,18 +86,26 @@ export function readCheckinSupport(checkinProbe, statusData) {
 export function detectSite(probe) {
   const result = {
     origin: probe.origin, name: cleanSiteName(probe.title, probe.origin),
-    panelType: 'unsupported', loggedIn: false, userId: probe.userId || '',
-    balance: null, checkinSupported: null, status: 'unsupported', error: '', importable: false
+    panelType: 'unsupported', adapter: '', loggedIn: false, userId: probe.userId || '',
+    balance: null, checkinSupported: null, status: 'unsupported', error: '', importable: false,
+    discovery: probe.discovery || null
   };
   const statusIsPanel = isPanelStatus(probe.status);
   const selfData = probe.self?.data?.data;
   const selfIsUser = probe.self?.status === 200 && selfData && typeof selfData === 'object' && (selfData.id !== undefined || selfData.quota !== undefined || selfData.username !== undefined);
   if (!statusIsPanel && !selfIsUser) {
+    const discovery = probe.discovery;
+    if (discovery && (discovery.possibleCheckinEndpoints?.length || discovery.possibleBalanceEndpoints?.length)) {
+      result.status = 'unknown-site';
+      result.error = '未识别适配器；发现疑似可适配的接口，需要人工确认或编写适配器（未执行任何写操作）';
+      return result;
+    }
     result.status = 'unsupported';
     result.error = '未发现 New API / One API 特征（/api/status 与 /api/user/self 均不可识别）';
     return result;
   }
   result.panelType = 'newapi';
+  result.adapter = 'New API Adapter';
   if (!selfIsUser) {
     if ([401, 403].includes(probe.self?.status)) {
       const triedCandidates = Boolean(probe.candidates?.length);
@@ -127,12 +135,20 @@ export function detectSite(probe) {
 }
 
 export function describeSite(site) {
-  const panelLabel = site.panelType === 'newapi' ? 'New API / One API' : '非支持站点';
+  const panelLabel = site.adapter || (site.panelType === 'newapi' ? 'New API Adapter' : '未知站点');
   const checkin = site.checkinSupported === true ? '可签到' : site.checkinSupported === null ? '签到接口未确认' : '不可签到';
   const balance = site.balance ? ` · 余额 ${site.balance}` : '';
   if (site.status === 'ok') return `${panelLabel} · 已登录 · ${checkin}${balance}`;
   if (site.status === 'missing-user-id') return `${panelLabel} · 已登录 · 未自动找到用户 ID，请补填`;
   if (site.status === 'unauthenticated') return `${panelLabel} · 未登录或登录已过期`;
+  if (site.status === 'unknown-site') {
+    const found = site.discovery || {};
+    const parts = [];
+    if (found.possibleCheckinEndpoints?.length) parts.push(`疑似签到接口 ${found.possibleCheckinEndpoints.map(x => x.path).join('、')}`);
+    if (found.possibleBalanceEndpoints?.length) parts.push(`疑似余额接口 ${found.possibleBalanceEndpoints.map(x => x.path).join('、')}`);
+    if (found.possibleUserEndpoints?.length) parts.push(`疑似用户接口 ${found.possibleUserEndpoints.map(x => x.path).join('、')}`);
+    return `Unknown Site · ${parts.length ? parts.join('；') + '；需要人工确认/添加适配器' : '未发现可适配接口'}（探测只读，未执行写操作）`;
+  }
   if (site.status === 'error') return `${panelLabel} · 探测失败：${site.error}`;
   return '非支持站点';
 }

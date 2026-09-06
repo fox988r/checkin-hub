@@ -58,7 +58,7 @@ function render(data) {
       ${a.checkinSupported === true ? '<span class="checkin-badge">签到接口 ✅</span>' : a.checkinSupported === null && a.source === 'browser-import' ? '<span class="checkin-badge unknown">签到接口待验证</span>' : ''}
       <div class="balance">${esc(a.balance ?? '—')}</div>
       <div class="model-box"><strong>${esc(a.modelName || '尚未选择模型')}</strong><span>${esc(priceWithEstimate(a.modelPrice) || (a.hasApiKey ? '点击选择模型并查看价格' : '请先编辑并填写 API Key'))}</span></div>
-      <p class="meta">${a.lastError ? esc(a.lastError) : a.lastCheckinMessage ? esc(a.lastCheckinMessage) : a.lastCheckedAt ? '更新于 ' + new Date(a.lastCheckedAt).toLocaleString() : '等待首次刷新'}</p>
+      <p class="meta">${a.lastError ? (a.lastErrorKind ? `<b>${errorKindLabel(a.lastErrorKind)}</b>：` : '') + esc(a.lastError) : a.lastCheckinMessage ? esc(a.lastCheckinMessage) : a.lastCheckedAt ? '更新于 ' + new Date(a.lastCheckedAt).toLocaleString() : '等待首次刷新'}</p>
       <div class="card-actions"><button onclick="run('${a.id}','poll')">刷新</button><button class="secondary" onclick="run('${a.id}','checkin')">签到</button><button class="ghost" onclick="openTagPicker('${a.id}')">选择标签</button><button class="ghost" onclick="openModels('${a.id}')">选择模型</button><button class="ghost" onclick="testModel('${a.id}',this)">测试模型</button>${a.refreshMode === 'browser' ? `<button class="ghost" onclick="openServerBrowser('${a.id}')">浏览器登录</button>` : ''}<button class="ghost" onclick="edit('${a.id}')">编辑</button><button class="ghost" onclick="removeAccount('${a.id}')">删除</button></div>
     </article>`).join('') : `<article class="panel"><p>${activeFilter ? '这个标签下还没有站点。' : '还没有站点，先添加一个。'}</p></article>`;
 }
@@ -158,6 +158,10 @@ $('#loginForm').onsubmit = async event => {
   finally { button.disabled = false; button.textContent = '进入控制台'; }
 };
 
+function errorKindLabel(kind) {
+  return { auth_expired: '登录失效', endpoint_changed: '接口变更', rate_limited: '触发限流', already_checked: '已签到', network_error: '网络错误', unsupported: '站点不支持', unknown: '未知错误' }[kind] || '未知错误';
+}
+
 async function loadImportInfo() {
   try {
     const [tokenData, recordData] = await Promise.all([api('/api/import/token'), api('/api/import/records')]);
@@ -166,12 +170,18 @@ async function loadImportInfo() {
       : '尚未生成导入 Token';
     $('#revokeImportToken').classList.toggle('hidden', !tokenData.active);
     $('#genImportToken').textContent = tokenData.active ? '重新生成' : '生成导入 Token';
+    try { $('#autoCheckinOnImport').checked = (await api('/api/import/settings')).autoCheckinOnImport !== false; } catch {}
     $('#importRecords').innerHTML = (recordData.records || []).map(record => {
       const label = record.result === 'created' ? '新增' : record.result === 'updated' ? '更新' : '失败';
       return `<span class="import-record ${record.result === 'failed' ? 'failed' : ''}">${esc(record.name)} · ${esc(record.origin)} · ${label}${record.message ? ` · ${esc(record.message)}` : ''} · ${new Date(record.at).toLocaleString()}</span>`;
     }).join('') || '<span class="hint">还没有浏览器导入记录。</span>';
   } catch { $('#importTokenStatus').textContent = '加载失败'; }
 }
+window.toggleAutoCheckinOnImport = async enabled => {
+  try { await api('/api/import/settings', { method: 'POST', body: JSON.stringify({ enabled }) }); }
+  catch (error) { alert(error.message); loadImportInfo(); }
+};
+$('#autoCheckinOnImport').onchange = event => toggleAutoCheckinOnImport(event.target.checked);
 window.generateImportToken = async () => {
   if (!confirm('生成新 Token 会立即吊销旧 Token，正在使用的扩展需要更新，继续？')) return;
   try {

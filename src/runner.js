@@ -2,6 +2,12 @@ import dns from 'node:dns/promises';
 import net from 'node:net';
 import { decrypt, encrypt, mutateStore, readStore } from './store.js';
 import { refreshInBrowser } from './browser.js';
+import { resolveAdapterForAccount } from '../adapters/registry.js';
+import { createAdapterContext } from '../adapters/context.js';
+import { classifyFailure } from '../adapters/failures.js';
+import { notifySafe } from '../notifiers/registry.js';
+
+const failureStreaks = new Map();
 
 const accountRunQueues = new Map();
 
@@ -130,7 +136,7 @@ export function formatNewApiQuota(value) {
   return Number.isFinite(amount) ? `$${(amount / 500000).toFixed(2)}` : '—';
 }
 
-function findConfig(data, names) {
+export function findConfig(data, names) {
   if (!data || typeof data !== 'object') return undefined;
   for (const name of names) if (data[name] !== undefined) return data[name];
   for (const value of Object.values(data)) {
@@ -421,48 +427,21 @@ export function classifyCheckin(data) {
   return { status: 'ok', message: message || '签到成功' };
 }
 
-async function runNewApi(account, action) {
-  if (!account.userId) throw new Error('请填写用户 ID');
-  if (!account.credential) throw new Error('请填写登录 Cookie');
-  let checkin;
-  if (action === 'checkin') checkin = classifyCheckin(await call(account, '/api/user/checkin', 'POST', 'newapi'));
-  let config = {};
-  try { config = await call(account, '/api/status', 'GET', 'public'); } catch {}
-  const data = await call(account, '/api/user/self', 'GET', 'newapi');
-  const rawBalance = readRemainingQuota(data);
-  if (rawBalance === undefined) throw new Error(data?.message || '余额响应中没有 data.quota');
-  const quotaPerUnit = Number(findConfig(config, ['quota_per_unit', 'quotaPerUnit', 'QuotaPerUnit'])) || 500000;
-  return { balance: formatQuota(rawBalance, config, account.currency || 'auto'), rawBalance, quotaPerUnit, checkin };
-}
-
-async function runGeneric(account, action) {
-  let checkin;
-  if (action === 'checkin') {
-    if (!account.checkinPath) throw new Error('尚未配置签到接口');
-    checkin = classifyCheckin(await call(account, account.checkinPath, account.checkinMethod || 'POST'));
-  }
-  if (!account.balancePath) throw new Error('尚未配置余额接口；模型与价格功能仍可使用');
-  const data = await call(account, account.balancePath, 'GET');
-  const raw = readConfiguredBalance(data, account.balanceField || 'balance');
-  if (raw === undefined) throw new Error(`余额字段 ${account.balanceField || 'balance'} 不存在`);
-  const divisor = Number(account.balanceDivisor || 1);
-  const amount = divisor !== 1 && Number.isFinite(Number(raw)) ? Number(raw) / divisor : raw;
-  const prefix = account.currency === 'cny' ? '¥' : account.currency === 'usd' ? '$' : '';
-  const balance = Number.isFinite(Number(amount)) ? `${prefix}${Number(amount).toFixed(2)}` : String(amount ?? '—');
-  return { balance, rawBalance: Number.isFinite(Number(raw)) ? Number(raw) : null, quotaPerUnit: divisor || 1, checkin };
-}
-
+// 原来的 runNewApi / runGeneric 已分别迁移为 adapters/new-api.js 与
+// adapters/generic-json.js；这里的执行统一走 adapter.run()，
+// 对旧账号由 resolveAdapterForAccount 按 panelType 自动映射。
 async function runAccountUnlocked(id, action = 'poll') {
   const db = readStore();
   const account = db.accounts.find(x => x.id === id);
   if (!account || !account.enabled) throw new Error('账户不存在或已停用');
   const originalCredential = account.credential;
   const originalRefreshCookie = account.refreshCookie;
+  const previousBalanceRaw = account.balanceRaw;
   const startedAt = new Date().toISOString();
   let run;
   try {
-    const panelType = account.panelType === 'generic' ? 'generic' : 'newapi';
-    const result = panelType === 'newapi' ? await runNewApi(account, action) : await runGeneric(account, action);
+    const adapter = resolveAdapterForAccount(account);
+    const result = await adapter.run(createAdapterContext(account), account, action);
     account.balance = result.balance;
     account.balanceRaw = result.rawBalance;
     account.quotaPerUnit = result.quotaPerUnit || account.quotaPerUnit || 500000;
@@ -471,9 +450,11 @@ async function runAccountUnlocked(id, action = 'poll') {
         billing: 'call', price: account.modelPrice.price, priceUnit: account.modelPrice.priceUnit
       });
     }
-    account.detectedType = panelType;
+    account.detectedType = account.panelType === 'generic' ? 'generic' : 'newapi';
+    account.adapterId = adapter.id;
     account.lastStatus = 'ok';
     account.lastError = '';
+    account.lastErrorKind = '';
     account.lastCheckedAt = new Date().toISOString();
     if (action === 'checkin') {
       account.lastCheckinAt = account.lastCheckedAt;
@@ -481,16 +462,27 @@ async function runAccountUnlocked(id, action = 'poll') {
       account.lastCheckinMessage = result.checkin.message;
     }
     run = { id: crypto.randomUUID(), accountId: id, action, status: result.checkin?.status || 'ok', message: result.checkin?.message || '', startedAt };
+    failureStreaks.delete(id);
+    if (Number.isFinite(previousBalanceRaw) && previousBalanceRaw > 0 && Number.isFinite(result.rawBalance) && result.rawBalance / previousBalanceRaw < 0.5) {
+      notifySafe({ type: 'balance_changed', accountId: id, accountName: account.name, detail: `余额从 ${previousBalanceRaw} 降到 ${result.rawBalance}` });
+    }
   } catch (error) {
+    const kind = classifyFailure(error);
     account.lastStatus = 'error';
     account.lastError = error.message;
+    account.lastErrorKind = kind;
     account.lastCheckedAt = new Date().toISOString();
-    run = { id: crypto.randomUUID(), accountId: id, action, status: 'error', message: error.message, startedAt };
+    const streak = (failureStreaks.get(id) || 0) + 1;
+    failureStreaks.set(id, streak);
+    run = { id: crypto.randomUUID(), accountId: id, action, status: 'error', errorKind: kind, message: error.message, startedAt };
+    if (streak >= 3 || kind === 'auth_expired') {
+      notifySafe({ type: kind === 'auth_expired' ? 'auth_expired' : 'checkin_failed_streak', accountId: id, accountName: account.name, streak, detail: error.message });
+    }
   }
   return mutateStore(latest => {
     const saved = latest.accounts.find(x => x.id === id);
     if (saved) {
-      for (const field of ['balance', 'balanceRaw', 'quotaPerUnit', 'detectedType', 'lastStatus', 'lastError', 'lastCheckedAt', 'lastCheckinAt', 'lastCheckinStatus', 'lastCheckinMessage']) {
+      for (const field of ['balance', 'balanceRaw', 'quotaPerUnit', 'detectedType', 'adapterId', 'lastStatus', 'lastError', 'lastErrorKind', 'lastCheckedAt', 'lastCheckinAt', 'lastCheckinStatus', 'lastCheckinMessage']) {
         if (Object.hasOwn(account, field)) saved[field] = account[field];
       }
       if (saved.modelPrice?.type === 'per_call') {

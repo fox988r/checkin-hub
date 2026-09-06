@@ -48,7 +48,7 @@ test('detects a logged-in New API site with balance and checkin state', () => {
   assert.equal(site.balance, '$3.25');
   assert.equal(site.checkinSupported, true);
   assert.equal(site.importable, true);
-  assert.match(describeSite(site), /New API \/ One API · 已登录 · 可签到 · 余额 \$3\.25/);
+  assert.match(describeSite(site), /New API Adapter · 已登录 · 可签到 · 余额 \$3\.25/);
 });
 
 test('treats a 404 checkin probe as unconfirmed instead of unsupported', () => {
@@ -109,4 +109,33 @@ test('summarizes scan results', () => {
     { panelType: 'unsupported', importable: false }
   ]);
   assert.deepEqual(summary, { total: 3, supported: 2, importable: 1 });
+});
+
+test('unknown sites surface read-only discovery instead of support claims', () => {
+  const site = detectSite({
+    origin: 'https://forum.example.com', title: '论坛',
+    status: { status: 200, data: null }, self: { status: 404, data: null }, checkin: { status: 0 },
+    userId: '', candidates: [],
+    discovery: {
+      possibleUserEndpoints: [{ path: '/api/me' }],
+      possibleBalanceEndpoints: [{ path: '/api/points' }],
+      possibleCheckinEndpoints: [{ path: '/api/checkin/status' }]
+    }
+  });
+  assert.equal(site.status, 'unknown-site');
+  assert.equal(site.importable, false);
+  const description = describeSite(site);
+  assert.match(description, /Unknown Site/);
+  assert.match(description, /疑似签到接口/);
+  assert.match(description, /人工确认/);
+});
+
+test('sites with no discovery hints stay plainly unsupported', () => {
+  const site = detectSite({
+    origin: 'https://blog.example.com', title: '博客',
+    status: { status: 200, data: null }, self: { status: 404, data: null }, checkin: { status: 0 },
+    userId: '', candidates: [], discovery: { possibleUserEndpoints: [], possibleBalanceEndpoints: [], possibleCheckinEndpoints: [] }
+  });
+  assert.equal(site.status, 'unsupported');
+  assert.match(describeSite(site), /非支持站点/);
 });

@@ -201,3 +201,72 @@ test('import never triggers check-in and reuses the existing verification helper
   assert.doesNotMatch(importer, /method: 'POST'[\s\S]*checkin/);
   assert.match(importer, /from '\.\/runner\.js'/);
 });
+
+test('runner dispatches through the adapter registry instead of hardcoding panels', () => {
+  const runner = fs.readFileSync(new URL('../src/runner.js', import.meta.url), 'utf8');
+  const registry = fs.readFileSync(new URL('../adapters/registry.js', import.meta.url), 'utf8');
+  assert.match(runner, /resolveAdapterForAccount\(account\)/);
+  assert.doesNotMatch(runner, /async function runNewApi/);
+  assert.doesNotMatch(runner, /async function runGeneric/);
+  assert.match(registry, /adapterId: 'unknown'/);
+  assert.match(registry, /adapterId: 'ambiguous'/);
+});
+
+test('adapters cannot bypass the safe fetch layer', () => {
+  for (const file of ['adapters/new-api.js', 'adapters/generic-json.js', 'adapters/declarative.js', 'adapters/discovery.js']) {
+    const source = fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
+    assert.doesNotMatch(source, /fetch\((?!url)/, `${file} 不得直接调用原生 fetch`);
+  }
+  const context = fs.readFileSync(new URL('../adapters/context.js', import.meta.url), 'utf8');
+  assert.match(context, /safeUrl/);
+  assert.match(context, /dry-run/);
+});
+
+test('adapter system ships template, declarative example and docs', () => {
+  const template = fs.readFileSync(new URL('../adapters/examples/template.js', import.meta.url), 'utf8');
+  const docs = fs.readFileSync(new URL('../adapters/README.md', import.meta.url), 'utf8');
+  const example = fs.readFileSync(new URL('../adapters/declarative/example-site.json.example', import.meta.url), 'utf8');
+  for (const method of ['match(', 'detect(', 'getUser(', 'getBalance(', 'getCheckinStatus(', 'checkin(']) {
+    assert.ok(template.includes(method), 'template should document ' + method);
+  }
+  assert.match(docs, /声明式适配器/);
+  assert.match(docs, /Code Adapter/);
+  JSON.parse(example);
+});
+
+test('failure kinds surface in the dashboard and logs', () => {
+  const source = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  assert.match(source, /errorKindLabel/);
+  assert.match(source, /登录失效/);
+  const failures = fs.readFileSync(new URL('../adapters/failures.js', import.meta.url), 'utf8');
+  for (const kind of ['auth_expired', 'endpoint_changed', 'rate_limited', 'network_error', 'unsupported']) {
+    assert.match(failures, new RegExp(kind));
+  }
+});
+
+test('auto check-in queue toggle is exposed with its server settings route', () => {
+  const html = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+  const source = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const importer = fs.readFileSync(new URL('../src/browserImport.js', import.meta.url), 'utf8');
+  assert.match(html, /id="autoCheckinOnImport"/);
+  assert.match(html, /浏览器导入后自动加入签到队列/);
+  assert.match(source, /toggleAutoCheckinOnImport/);
+  assert.match(importer, /autoCheckinOnImport/);
+  assert.match(importer, /自动签到/);
+});
+
+test('discovery endpoint stays read-only by construction', () => {
+  const source = fs.readFileSync(new URL('../src/server.js', import.meta.url), 'utf8');
+  const discovery = fs.readFileSync(new URL('../adapters/discovery.js', import.meta.url), 'utf8');
+  assert.match(source, /dryRun: true/);
+  assert.match(source, /\/api\/discover/);
+  assert.doesNotMatch(discovery, /method: '(POST|PUT|PATCH|DELETE)'/);
+});
+
+test('notifier abstraction exists with a webhook implementation', () => {
+  const registry = fs.readFileSync(new URL('../notifiers/registry.js', import.meta.url), 'utf8');
+  const webhook = fs.readFileSync(new URL('../notifiers/webhook.js', import.meta.url), 'utf8');
+  assert.match(registry, /registerNotifier/);
+  assert.match(registry, /notifySafe/);
+  assert.match(webhook, /NOTIFY_WEBHOOK_URL/);
+});
