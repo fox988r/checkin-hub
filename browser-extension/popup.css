@@ -1,0 +1,28 @@
+body{width:390px;margin:0;padding:12px 14px 16px;font:13px/1.5 system-ui,"Microsoft YaHei",sans-serif;color:#3d2b34;background:#fff8fb}
+h1{margin:0 0 10px;font-size:15px}
+details{margin-bottom:10px;padding:8px 10px;border:1px solid #f0d4e0;border-radius:10px;background:#fff}
+summary{cursor:pointer;font-weight:700;color:#a4537a}
+details label{display:grid;gap:3px;margin:8px 0 0;font-size:12px;color:#8a6a78}
+input{margin-top:2px;padding:7px 9px;border:1px solid #e4c3d2;border-radius:8px;font:inherit;box-sizing:border-box;width:100%}
+button{padding:7px 12px;border:0;border-radius:9px;background:linear-gradient(135deg,#f3a1c1,#e77eaa);color:#fff;font-weight:700;cursor:pointer}
+button:hover{filter:brightness(1.05)}
+button.secondary{background:linear-gradient(135deg,#d8b9f3,#b997e2)}
+button:disabled{opacity:.45;cursor:not-allowed}
+#actions{display:flex;gap:8px;margin-bottom:8px}
+#actions button{flex:1}
+.hint{color:#9a7183;font-size:11px;margin:4px 0 0;word-break:break-all}
+.site{margin:8px 0;padding:9px 11px;border:1px solid #f0d4e0;border-radius:11px;background:#fff}
+.site .head{display:flex;gap:7px;align-items:baseline}
+.site .name{font-weight:750;color:#6f3d55;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.site .origin{color:#9a7183;font-size:11px}
+.site .desc{margin:4px 0 0;font-size:12px;color:#5b4450}
+.site .error{color:#c2506e}
+.site .uid-row{display:flex;gap:6px;margin-top:6px;align-items:center;font-size:12px;color:#8a6a78}
+.site .uid-row input{width:120px}
+footer{margin-top:10px}
+#results{max-height:320px;overflow:auto}
+.badge{display:inline-block;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:750;margin-left:6px}
+.badge.ok{background:#e8f7ef;color:#3d8b66}
+.badge.warn{background:#fff3d6;color:#a07a1f}
+.badge.bad{background:#ffe6ec;color:#c2506e}
+.badge.mute{background:#f5edf1;color:#9a7183}

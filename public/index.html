@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#fff4f8">
   <title>站点积分台</title>
-  <link rel="stylesheet" href="/style.css?v=20260905-38">
+  <link rel="stylesheet" href="/style.css?v=20260906-39">
 </head>
 <body>
 <main>
@@ -17,6 +17,7 @@
     <section class="stats"><article><span>站点</span><strong id="siteCount">0</strong></article><article><span>正常</span><strong id="okCount">0</strong></article><article><span>待处理</span><strong id="errorCount">0</strong></article></section>
     <section class="poll-tags-panel"><div><h2>轮询标签</h2><p>先添加标签，再给具体站点选择标签；点亮的标签才参与轮询。</p></div><form id="addTagForm" class="add-tag-form"><input name="tag" maxlength="30" placeholder="新标签名称" required><button>＋ 添加标签</button></form><div id="pollTags" class="poll-tags"></div></section>
     <section class="filter-panel"><strong>标签筛选</strong><div id="filterTags" class="poll-tags"></div><span class="hint">筛选后直接拖动卡片，调整站点及轮询顺序。</span></section>
+    <section class="filter-panel import-panel"><strong>浏览器导入</strong><span id="importTokenStatus" class="hint">加载中…</span><button id="genImportToken">生成导入 Token</button><button id="revokeImportToken" class="ghost hidden">吊销</button><label class="import-setting"><input type="checkbox" id="autoCheckinOnImport" checked> 浏览器导入后自动加入签到队列</label><span class="hint">在浏览器扩展中填入积分台地址与导入 Token，即可把已登录的 New API / One API 站点一键收编。</span><div id="importTokenValue" class="import-token-value hidden"></div><div id="importRecords" class="poll-tags"></div></section>
     <div class="actions"><button id="pollAll">刷新筛选站点</button><button id="checkinAll" class="secondary">签到筛选站点</button><span id="batchProgress" class="batch-progress"></span><button id="add" class="ghost">＋ 添加站点</button></div>
     <section id="cards" class="cards"></section>
     </div>
@@ -84,6 +85,6 @@
   <div id="modelCategories" class="model-categories"></div>
   <div id="modelChoices" class="model-choices"></div>
 </dialog>
-<script src="/app.js?v=20260905-38"></script>
+<script src="/app.js?v=20260906-40"></script>
 </body>
 </html>
