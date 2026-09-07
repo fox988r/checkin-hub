@@ -1,8 +1,12 @@
 {
-  "name": "site-points-hub",
+  "name": "checkin-hub",
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fox988r/checkin-hub.git"
+  },
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
